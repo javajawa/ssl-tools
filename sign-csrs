@@ -59,7 +59,7 @@ do
 		SERIAL=${LINE#> V	*	*	}
 		SERIAL=${SERIAL%%	*}
 
-		cp -v "${SSL_HOME}/ca/${CA_NAME}/certs/${SERIAL}.pem" \
+		cp -b -v "${SSL_HOME}/ca/${CA_NAME}/certs/${SERIAL}.pem" \
 		      "${SSL_HOME}/certs/${CN}/${CN}.crt"
 	fi
 done
