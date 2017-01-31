@@ -1,0 +1,115 @@
+#!/bin/sh
+# vim: ts=4 nospell
+
+# Find the home directory for these tools
+BIN_HOME=`readlink -f "$0"`
+BIN_HOME=${BIN_HOME%/*}
+
+# Find the home directory for SSL
+if [ -z "$SSL_HOME" ]
+then
+	SSL_HOME=`readlink -f .`
+fi
+
+# Check we have access to the template config
+if [ ! -r "${SSL_HOME}/openssl.cnf" ]
+then
+	echo Can not find the template 'openssl.cnf'
+	echo
+	echo "  Looking for: ${SSL_HOME}/openssl.cnf"
+	echo "  Copy from?:  ${BIN_HOME}/openssl.cnf"
+	exit 1
+fi
+
+# Print out our config variables
+set -x
+
+CA_NAME=${CA_NAME:-root}   # The name of the CA
+KEY_TYPE=${KEY_TYPE:-rsa}  # The type of key to generate
+KEY_BITS=${KEY_BITS:-4096} # The number of bits in the key
+HASH=${HASH:-sha512}       # The message digest to use
+DAYS=${DAYS:-7000}         # The number of days the key is issued for
+
+# Check the user is happy with them
+set +x
+echo "Ok? (Ctrl+C to abort)"
+read OK
+
+# Determine the target directory
+TARGET=${SSL_HOME}/ca/${CA_NAME}
+
+# See if there is already a certificate
+if [ -r "$TARGET/${CA_NAME}.crt" ]
+then
+	echo CA $CA_NAME exists
+	exit 0
+fi
+
+# Remove any existing config (partial build?)
+test -d "$TARGET" && rm -Rf "$TARGET"
+# Ensure the target dir exists
+mkdir -pv "$TARGET"
+
+SSL_CONF=${TARGET}/openssl.cnf
+
+# Generate the opensl.cnf for this CA
+sed \
+	-e "s%SSL_HOME%${SSL_HOME}%" \
+	-e "s%CA_NAME%${CA_NAME}%" \
+	-e "s%CERT_TYPE%crt_ca%" \
+	"$SSL_HOME/openssl.cnf" >"${SSL_CONF}" \
+|| {
+	echo "Unable to generate openssl.cnf"
+	exit 1
+}
+
+# Delete any existing Common Name from the config
+sed -i "/commonName_default/d" "$SSL_CONF"
+
+# Determine the organisation name
+ORG=`grep 0.organizationName_default "$SSL_CONF"`
+
+# If an org is found, set it as the default common name
+if [ -n "${ORG##*= }" ]
+then
+	sed -i -e "/commonName_max/a commonName_default = ${ORG##*=} Root CA" "$SSL_CONF"
+fi
+
+# Certificate Request
+# Load in your openssl config
+# Generate a new key
+# Output a certificate
+# Lasts for 20 years :3
+openssl req \
+	-config "$SSL_CONF" \
+	-reqexts "v3_req_ca" -extensions "v3_req_ca" \
+	-newkey ${KEY_TYPE}:${KEY_BITS} -keyout "$TARGET/${CA_NAME}.key" \
+	-x509 -out "$TARGET/${CA_NAME}.crt" \
+	-"${HASH}" -days "$DAYS" \
+|| {
+	echo "Failed generating CA"
+	rm -Rf "$TARGET"
+	exit 1
+}
+
+# Delete any existing Common Name from the config
+sed -i "/commonName_default/d" "$SSL_CONF"
+
+# Create the folder that store the certificates and the
+# certificate revocation lists
+mkdir -v "${TARGET}/certs" "${TARGET}/crl"
+
+# Create the certificate index file
+touch "${TARGET}/index.txt"
+
+# Create the index options -- require that certificate
+# subjects are unique (prevents weird duplicate cert
+# issuse, and encourages proper revocation practices
+echo "unique_subject = yes" >"${TARGET}/index.txt.attr"
+
+# Get a random number
+RANDOM=`od -N 2 /dev/urandom | sed -e 's/ //g' -e 's/^0*//' -e 'q'`
+
+# Generate random serial numbers for certs and CRLs
+printf '%012d\n' "${RANDOM}" >"${TARGET}/serial"
+printf '%012d\n' "${RANDOM}" >"${TARGET}/crlnumber"

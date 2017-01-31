@@ -1,0 +1,65 @@
+#!/bin/sh
+# vim: ts=4 nospell
+
+# Find the home directory for these tools
+BIN_HOME=`readlink -f "$0"`
+BIN_HOME=${BIN_HOME%/*}
+
+# Find the home directory for SSL
+if [ -z "$SSL_HOME" ]
+then
+	SSL_HOME=`readlink -f .`
+fi
+
+if [ -z "$1" ]
+then
+	echo "Please specify CA name as the first argument"
+	exit 1
+fi
+
+# Print out our config variables
+set -x
+
+CA_NAME=${1}               # The name of the new CA
+HASH=${HASH:-sha512}       # The message digest to use
+
+# Check the user is happy with them
+set +x
+echo "Ok? (Ctrl+C to abort)"
+read OK
+
+# Determine the target directory
+SIGNER=${SSL_HOME}/ca/${CA_NAME}
+
+# See if there is already a certificate
+if [ ! -r "$SIGNER/${CA_NAME}.crt" ]
+then
+	echo CA $CA_NAME does not exist
+	exit 1
+fi
+
+SSL_CONF=$SIGNER/openssl.cnf
+
+find "${SSL_HOME}/certs/" -name \*.csr -exec openssl ca -config "${SSL_CONF}" -name "${CA_NAME}" -md "${HASH}" -out /dev/null -infiles '{}' + && \
+find "${SSL_HOME}/certs/" -name \*.csr -delete || exit 1
+
+diff "${SSL_HOME}/ca/${CA_NAME}/index.txt.old" "${SSL_HOME}/ca/${CA_NAME}/index.txt" >"${SSL_HOME}/ca/${CA_NAME}/index.diff"
+
+exec 3<"${SSL_HOME}/ca/${CA_NAME}/index.diff"
+read LINE <&3
+
+while read LINE <&3
+do
+	test "${LINE%%	*}" = "> V" || continue
+
+	CN=${LINE##*CN=}
+
+	if [ -d "${SSL_HOME}/certs/${CN}" ]
+	then
+		SERIAL=${LINE#> V	*	*	}
+		SERIAL=${SERIAL%%	*}
+
+		cp -v "${SSL_HOME}/ca/${CA_NAME}/certs/${SERIAL}.pem" \
+		      "${SSL_HOME}/certs/${CN}/${CN}.crt"
+	fi
+done

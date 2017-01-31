@@ -1,0 +1,109 @@
+#!/bin/sh
+# vim: ts=4 nospell
+
+# Find the home directory for these tools
+BIN_HOME=`readlink -f "$0"`
+BIN_HOME=${BIN_HOME%/*}
+
+# Find the home directory for SSL
+if [ -z "$SSL_HOME" ]
+then
+	SSL_HOME=`readlink -f .`
+fi
+
+if [ -z "$1" ]
+then
+	echo "Please specify cert names as arguments"
+	exit 1
+fi
+
+# Print out our config variables
+set -x
+
+CA_NAME=${CA_NAME}         # The name of the signing CA
+KEY_TYPE=${KEY_TYPE:-rsa}  # The type of key to generate
+KEY_BITS=${KEY_BITS:-4096} # The number of bits in the key
+HASH=${HASH:-sha512}       # The message digest to use
+DAYS=${DAYS:-365}          # The number of days requested
+
+# Check the user is happy with them
+set +x
+echo "Ok? (Ctrl+C to abort)"
+read OK
+
+if [ -n "$CA_NAME" ]
+then
+	# Find the signing CA
+	SIGNER=${SSL_HOME}/ca/${CA_NAME}
+	SSL_CONF=$SIGNER/openssl.cnf
+else
+	SSL_CONF=$SSL_HOME/openssl.cnf
+fi
+
+if [ ! -r "$SSL_CONF" ]
+then
+	echo "Can not read config file $SSL_CONF"
+	exit 1
+fi
+
+while [ -n "$1" ]
+do
+	NAME=$1
+	TARGET=${SSL_HOME}/certs/$NAME
+
+	echo " ===== $NAME ===== "
+
+	mkdir -vp "$TARGET"
+
+	if [ -r "$TARGET/${NAME}.csr" -o -r "$TARGET/${NAME}.crt" ]
+	then
+		echo "A CSR/Cert exists ${NAME}. Continue [yN]"
+		read ANSWER
+
+		if [ "$ANSWER" != y -a "$ANSWER" != Y ]
+		then
+			shift
+			continue
+		fi
+	fi
+
+	if [ -r "$TARGET/${NAME}.key" ]
+	then
+		printf "Key for ${NAME} exists. Re-use it? [Yn] "
+		read ANSWER
+
+		if [ "$ANSWER" = N -o "$ANSWER" = n ]
+		then
+			mv -v "$TARGET/${NAME}.key" "${TARGET}/${NAME}.`date`.key"
+		fi
+	fi
+
+	# Delete any existing Common Name from the config
+	sed -i "$SSL_CONF" \
+		-e "/commonName_default/d" \
+		-e "/commonName_max/a commonName_default = ${NAME}"
+
+	# Perform the operation based on whether we already have a key
+	if [ -r "$TARGET/${NAME}.key" ]
+	then
+		openssl req -new \
+			-config "$SSL_CONF" \
+			-reqexts "v3_req" -extensions "v3_req" \
+			-key "$TARGET/${NAME}.key" \
+			-out "$TARGET/${NAME}.csr" \
+			-"${HASH}" -days "$DAYS"
+	else
+		openssl req -new \
+			-config "$SSL_CONF" \
+			-reqexts "v3_req" -extensions "v3_req" \
+			-newkey "${KEY_TYPE}:${KEY_BITS}" \
+			-keyout "$TARGET/${NAME}.key" \
+			-out "$TARGET/${NAME}.csr" \
+			-"${HASH}" -days "$DAYS"
+	fi
+
+	shift
+done
+
+sed -i "$SSL_CONF" \
+	-e "/commonName_default/d"
