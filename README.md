@@ -22,18 +22,32 @@ systems.
  - `od`
  - `diff`
 
-h3. Installation
+### Installation
 
 The scripts make be run from any folder, but you may wish
 to add them to `$PATH`, possibly by copying them to
 `/usr/local/bin`.
 
-h3. Configuration
+### Configuration
 
 `openssl.cnf` should be copied to the folder where you want
 to store your PKI.
-You should update the `HOME` (line 6) setting, and the
-`_default` values in the `[ req_distinquished_name ]` section.
+You should update the `HOME` (line 6) setting to reference that folder,
+and the `_default` values in the `[ req_distinquished_name ]` section.
+
+Quickstart
+----------
+
+These are the steps to get a simple cert pair issues for a server using your
+own CA.
+
+- Clone this repo
+- Edit `HOME` in `openssl.cnf` to point to the folder the repo was cloned to.
+- Create your CA with `./generate_root_ca` (you must give a password)
+- Request a cert to be signed with you CA with `./generate_csrs test.example.org`
+- Get that cert signed by your root CA with `./sign_csrs root`
+- Add `ca/root/root.crt` to your machine's trusted CAs (see your OS's instructions for this)
+- Give the server prcoess the key and cert found in `certs/test.example.org/` 
 
 Usage
 -----
@@ -45,7 +59,7 @@ and the defaults are as in the supplied `openssl.cnf`
 All scripts expect the current directory to be the HOME
 of OpenSSL.
 
-h3. `generate_root_ca`
+### `generate_root_ca`
 
 The `generate_root_ca` script creates a self-signed (root)
 certificate authority, which is configured to sign other
@@ -68,7 +82,7 @@ along with its own `openssl.cnf`, which you can customise.
 A common name for the new CA will be suggested based on the
 organisation name in openssl.cnf and the CA's name.
 
-h3. `generate_intermediate_ca`
+### `generate_intermediate_ca`
 
 The `generate_intermediate_ca` script creates a CA which is
 signed by another CA, and is intended for signing non-CA
@@ -90,7 +104,7 @@ environment variables:
 A common name for the new CA will be suggested based on the
 organisation name in openssl.cnf and the CA's name.
 
-h3. `generate_csrs`
+### `generate_csrs`
 
 The `generate_cars` scripts automatically generates a number of
 certificate signing requests, which can be signed by a local or
@@ -117,7 +131,7 @@ it.
 If the key already exists, then you will be given the options
 to re-use or replace it.
 
-h3. `sign_csrs`
+### `sign_csrs`
 
 The `sign_csrs` script signs all outstanding Certificate
 Signing Requests with the specified Certificate Authority

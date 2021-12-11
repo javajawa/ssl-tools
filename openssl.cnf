@@ -5,7 +5,7 @@
 # This file is used to generate the CA's configuration
 # files, and also to generate CSRs when no CA is specified.
 
-HOME			= SSL_HOME
+HOME			= SSL_HOME_CHANGE_ME
 RANDFILE		= $HOME/.rnd
 
 ####################################################################
